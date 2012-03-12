@@ -2,8 +2,8 @@
 using System.Security.Principal;
 using System.Threading;
 using System.Web;
-using System.Web.Security;
 using Microsoft.Web.Infrastructure.DynamicModuleHelper;
+using NuGetGallery.Infrastructure;
 
 [assembly: WebActivator.PreApplicationStartMethod(typeof(NuGetGallery.AuthenticationModule), "Start")]
 namespace NuGetGallery
@@ -24,16 +24,21 @@ namespace NuGetGallery
         {
             var context = HttpContext.Current;
             var request = HttpContext.Current.Request;
+
             if (request.IsAuthenticated)
             {
-                HttpCookie authCookie = request.Cookies[FormsAuthentication.FormsCookieName];
-                if (authCookie != null)
+                var userSvc = (IUserService) Container.Kernel.GetService(typeof(IUserService));
+                var identity = new WindowsIdentityProxy(context.User.Identity);
+                var user = userSvc.FindByUsername(identity.Name);
+
+                if (user == null)
                 {
-                    FormsAuthenticationTicket authTicket = FormsAuthentication.Decrypt(authCookie.Value);
-                    var roles = authTicket.UserData.Split('|');
-                    var user = new GenericPrincipal(context.User.Identity, roles);
-                    context.User = Thread.CurrentPrincipal = user;
+                    user = userSvc.Create(identity.Name, "Password", identity.Email);
+                    user.ConfirmEmailAddress();
                 }
+
+                var principal = new GenericPrincipal(identity, new[] { Constants.AdminRoleName });
+                context.User = Thread.CurrentPrincipal = principal;
             }
         }
 
